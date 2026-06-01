@@ -1,11 +1,21 @@
 /* globals THREE */
 
-const RUG_WIDTH = 3    // 900:1200 = 3:4 aspect ratio
+import { OcclusionManager } from './occlusion/occlusion-manager'
+import { createOcclusionRugMaterial } from './occlusion/rug-material'
+
+const RUG_WIDTH = 3
 const RUG_DEPTH = 4
 const RUG_HEIGHT = 0.02
+const MASK_W = 320
+const MASK_H = 240
 
 let selectedTextureSrc = 'assets/textures/Easther (Visualization).jpg'
 let placedRug = null
+let occlusionManager = null
+let currentRugMaterial = null
+let currentMaskTexture = null
+let currentMaskData = null
+let currentResolution = null
 
 function applyTextureToRug(rugEl, src) {
   const textureLoader = new THREE.TextureLoader()
@@ -16,34 +26,41 @@ function applyTextureToRug(rugEl, src) {
 
     const mesh = rugEl.getObject3D('mesh')
     if (mesh) {
-      mesh.traverse((node) => {
-        if (node.isMesh) {
-          node.material = new THREE.MeshStandardMaterial({
-            map: texture,
-            roughness: 0.9,
-            metalness: 0.0,
-          })
-          node.material.needsUpdate = true
-        }
-      })
+      setRugMaterial(mesh, texture)
     } else {
       rugEl.addEventListener('object3dset', () => {
         const m = rugEl.getObject3D('mesh')
-        if (m) {
-          m.traverse((node) => {
-            if (node.isMesh) {
-              node.material = new THREE.MeshStandardMaterial({
-                map: texture,
-                roughness: 0.9,
-                metalness: 0.0,
-              })
-              node.material.needsUpdate = true
-            }
-          })
-        }
-      }, {once: true})
+        if (m) setRugMaterial(m, texture)
+      }, { once: true })
     }
   })
+}
+
+function setRugMaterial(mesh, texture) {
+  mesh.traverse((node) => {
+    if (node.isMesh) {
+      if (currentRugMaterial) {
+        currentRugMaterial.dispose()
+      }
+      const { material, maskTexture, maskData, resolution } = createOcclusionRugMaterial({
+        map: texture,
+        width: MASK_W,
+        height: MASK_H,
+      })
+      node.material = material
+      node.material.needsUpdate = true
+      currentRugMaterial = material
+      currentMaskTexture = maskTexture
+      currentMaskData = maskData
+      currentResolution = resolution
+    }
+  })
+}
+
+function updateOcclusionMask() {
+  if (!currentMaskTexture || !occlusionManager) return
+  occlusionManager.readMask(currentMaskData, MASK_W, MASK_H)
+  currentMaskTexture.needsUpdate = true
 }
 
 const rugPlaceComponent = {
@@ -56,6 +73,16 @@ const rugPlaceComponent = {
     const uploadBtn = document.getElementById('upload-btn')
     const fileInput = document.getElementById('file-input')
     const placeBtn = document.getElementById('place-btn')
+
+    setTimeout(() => {
+      const video = document.querySelector('video')
+      if (!video) return
+      occlusionManager = new OcclusionManager(video, {
+        internalWidth: MASK_W,
+        internalHeight: MASK_H,
+      })
+      occlusionManager.init()
+    }, 2000)
 
     togglePanel.addEventListener('click', () => {
       const isVisible = designPanel.style.display !== 'none'
@@ -102,6 +129,13 @@ const rugPlaceComponent = {
       if (placedRug) {
         placedRug.parentNode.removeChild(placedRug)
         placedRug = null
+        if (currentRugMaterial) {
+          currentRugMaterial.dispose()
+          currentRugMaterial = null
+          currentMaskTexture = null
+          currentMaskData = null
+          currentResolution = null
+        }
         removeBtn.style.display = 'none'
         placeBtn.textContent = 'Tap Floor to Place Rug'
       }
@@ -132,7 +166,7 @@ const rugPlaceComponent = {
         height: RUG_HEIGHT,
         depth: RUG_DEPTH,
       })
-      rug.setAttribute('shadow', {receive: false, cast: true})
+      rug.setAttribute('shadow', { receive: false, cast: true })
       rug.setAttribute('visible', 'false')
       rug.setAttribute('scale', '0.001 0.001 0.001')
       rug.setAttribute('xrextras-hold-drag', '')
@@ -155,6 +189,20 @@ const rugPlaceComponent = {
       placeBtn.textContent = 'Tap to Reposition Rug'
     })
   },
+
+  tick() {
+    if (!occlusionManager || !occlusionManager.ready) return
+
+    const canvas = this.el.sceneEl?.canvas
+    if (canvas && currentResolution) {
+      currentResolution.set(canvas.width, canvas.height)
+    }
+
+    occlusionManager.processFrame()
+    if (occlusionManager.maskDirty) {
+      updateOcclusionMask()
+    }
+  },
 }
 
-export {rugPlaceComponent}
+export { rugPlaceComponent }

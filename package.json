@@ -4,7 +4,8 @@
   "description": "AR Rug Placer - Place custom design rugs on your floor using WebAR",
   "scripts": {
     "build": "webpack --config config/webpack.config.js",
-    "serve": "webpack-dev-server --mode=development --config config/webpack.config.js"
+    "serve": "webpack-dev-server --mode=development --config config/webpack.config.js",
+    "setup-models": "cd external/models && curl -sL -o depth-anything-v2-small.onnx https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model_int8.onnx && curl -sL -o yolov8n-seg.onnx https://huggingface.co/Kalray/yolov8n-seg/resolve/main/yolov8n-seg.optimized.onnx && echo 'Models downloaded to external/models/'"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
@@ -19,5 +20,8 @@
     "webpack": "^5.91.0",
     "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^5.2.2"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.26.0"
   }
 }

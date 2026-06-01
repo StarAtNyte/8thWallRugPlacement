@@ -24,8 +24,10 @@ module.exports = {
   entry: path.join(srcPath, 'app.js'),
   output: {
     filename: 'bundle.js',
+    chunkFilename: '[name].[contenthash].js',
     path: distPath,
     clean: true,
+    publicPath: 'auto',
   },
   devServer: {
     static: distPath,
@@ -95,6 +97,7 @@ module.exports = {
       patterns: [
         {from: 'external/', to: 'external/', noErrorOnMissing: true},
         {from: 'src/assets/', to: 'assets/', noErrorOnMissing: true},
+        {from: 'node_modules/onnxruntime-web/dist/ort-wasm*.wasm', to: 'external/wasm/[name][ext]', noErrorOnMissing: true},
       ],
     }),
   ],
