@@ -3,7 +3,8 @@ import * as ort from 'onnxruntime-web'
 let session = null
 const MODEL_W = 640
 const MODEL_H = 640
-const FURNITURE_CLASSES = new Set([56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90])
+// COCO 0-indexed floor-contact classes that can physically occlude a rug
+const FURNITURE_CLASSES = new Set([56, 57, 58, 59, 60]) // chair, couch, potted plant, bed, dining table
 
 self.onmessage = async (e) => {
   const { type, id, payload } = e.data
@@ -26,14 +27,18 @@ self.onmessage = async (e) => {
       self.postMessage({ type: 'error', id, error: 'seg model not loaded' })
       return
     }
-    const { pixels, width, height } = payload
-    const resized = resizeToModel(pixels, width, height)
-    const tensor = new ort.Tensor('float32', resized.data, [1, 3, MODEL_H, MODEL_W])
-    const feeds = { [session.inputNames[0]]: tensor }
-    const results = await session.run(feeds)
+    try {
+      const { pixels, width, height } = payload
+      const resized = resizeToModel(pixels, width, height)
+      const tensor = new ort.Tensor('float32', resized, [1, 3, MODEL_H, MODEL_W])
+      const feeds = { [session.inputNames[0]]: tensor }
+      const results = await session.run(feeds)
 
-    const mask = postprocess(results, width, height)
-    self.postMessage({ type: 'result', id, mask: mask.buffer, width, height }, [mask.buffer])
+      const mask = postprocess(results, width, height)
+      self.postMessage({ type: 'result', id, mask: mask.buffer, width, height }, [mask.buffer])
+    } catch (err) {
+      self.postMessage({ type: 'error', id, error: err.message })
+    }
   }
 }
 
@@ -70,22 +75,24 @@ function postprocess(outputs, width, height) {
 
   const boxes = []
   for (let i = 0; i < numDets; i++) {
-    const offset = i * 116
-    const cx = detData[offset]
-    const cy = detData[offset + 1]
-    const bw = detData[offset + 2]
-    const bh = detData[offset + 3]
+    const cx = detData[0 * numDets + i]
+    const cy = detData[1 * numDets + i]
+    const bw = detData[2 * numDets + i]
+    const bh = detData[3 * numDets + i]
 
     let maxScore = 0
     let bestCls = -1
     for (let c = 0; c < 80; c++) {
-      const s = detData[offset + 4 + c]
+      const s = detData[(4 + c) * numDets + i]
       if (s > maxScore) { maxScore = s; bestCls = c }
     }
     if (maxScore < 0.5) continue
-    if (!FURNITURE_CLASSES.has(bestCls + 1)) continue
+    if (!FURNITURE_CLASSES.has(bestCls)) continue
 
-    const coeffs = detData.slice(offset + 84, offset + 116)
+    const coeffs = new Float32Array(32)
+    for (let k = 0; k < 32; k++) {
+      coeffs[k] = detData[(84 + k) * numDets + i]
+    }
     boxes.push({ cx, cy, bw, bh, score: maxScore, cls: bestCls, coeffs })
   }
 
@@ -101,14 +108,16 @@ function postprocess(outputs, width, height) {
       maskMap[p] = 1 / (1 + Math.exp(-sum))
     }
 
-    const scaleX = width / MODEL_W
-    const scaleY = height / MODEL_H
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const mx = (x / scaleX) / MODEL_W * protoW
-        const my = (y / scaleY) / MODEL_H * protoH
-        const px = Math.min(Math.floor(mx), protoW - 1)
-        const py = Math.min(Math.floor(my), protoH - 1)
+    // Clamp to detection bbox — prevents mask bleeding outside the object
+    const x1 = Math.max(0, Math.floor((b.cx - b.bw / 2) / MODEL_W * width))
+    const y1 = Math.max(0, Math.floor((b.cy - b.bh / 2) / MODEL_H * height))
+    const x2 = Math.min(width - 1, Math.ceil((b.cx + b.bw / 2) / MODEL_W * width))
+    const y2 = Math.min(height - 1, Math.ceil((b.cy + b.bh / 2) / MODEL_H * height))
+
+    for (let y = y1; y <= y2; y++) {
+      for (let x = x1; x <= x2; x++) {
+        const px = Math.min(Math.floor((x / width) * protoW), protoW - 1)
+        const py = Math.min(Math.floor((y / height) * protoH), protoH - 1)
         if (maskMap[py * protoW + px] > 0.5) {
           mask[y * width + x] = 1
         }
@@ -128,7 +137,7 @@ function nms(boxes, iouThresh) {
     if (suppressed[a.i]) continue
     keep.push(a.i)
     for (const b of sorted) {
-      if (suppressed[b.i]) continue
+      if (b.i === a.i || suppressed[b.i]) continue
       const iou = computeIoU(boxes[a.i], boxes[b.i])
       if (iou > iouThresh) suppressed[b.i] = true
     }

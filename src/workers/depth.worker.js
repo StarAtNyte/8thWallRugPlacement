@@ -26,20 +26,24 @@ self.onmessage = async (e) => {
       self.postMessage({ type: 'error', id, error: 'depth model not loaded' })
       return
     }
-    const { pixels, width, height } = payload
-    const input = preprocess(pixels, width, height)
-    const tensor = new ort.Tensor('float32', input.data, input.dims)
-    const feeds = { [session.inputNames[0]]: tensor }
-    const results = await session.run(feeds)
+    try {
+      const { pixels, width, height } = payload
+      const input = preprocess(pixels, width, height)
+      const tensor = new ort.Tensor('float32', input.data, input.dims)
+      const feeds = { [session.inputNames[0]]: tensor }
+      const results = await session.run(feeds)
 
-    const depth = postprocess(results[session.outputNames[0]], width, height)
-    self.postMessage({ type: 'result', id, depth: depth.buffer, width, height }, [depth.buffer])
+      const depth = postprocess(results[session.outputNames[0]], width, height)
+      self.postMessage({ type: 'result', id, depth: depth.buffer, width, height }, [depth.buffer])
+    } catch (err) {
+      self.postMessage({ type: 'error', id, error: err.message })
+    }
   }
 }
 
 function preprocess(pixels, srcW, srcH) {
-  const outW = Math.min(srcW, 518)
-  const outH = Math.min(srcH, 518)
+  const outW = 518
+  const outH = 518
   const data = new Float32Array(3 * outH * outW)
   const xScale = srcW / outW
   const yScale = srcH / outH

@@ -33,6 +33,7 @@ export class OcclusionManager {
     this._pending = new Map()
     this._segWorker = null
     this._depthWorker = null
+    this._inferInFlight = false
   }
 
   async init() {
@@ -69,22 +70,24 @@ export class OcclusionManager {
 
   _onMsg(e) {
     const { type, id } = e.data
-    if (type === 'result' && this._pending.has(id)) {
-      this._pending.get(id).resolve(e.data)
-      this._pending.delete(id)
-    }
+    if (!this._pending.has(id)) return
+    const { resolve, reject } = this._pending.get(id)
+    this._pending.delete(id)
+    if (type === 'result') resolve(e.data)
+    else reject(new Error(e.data.error || 'worker inference error'))
   }
 
   _send(worker, payload) {
     const id = this._msgId++
-    return new Promise((resolve) => {
-      this._pending.set(id, { resolve })
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, { resolve, reject })
       worker.postMessage({ type: 'infer', id, payload })
     })
   }
 
   processFrame() {
     if (!this.ready) return
+    if (this._inferInFlight) return
     if (this.frameCount++ % this.opts.frameSkip !== 0) return
 
     const w = this.opts.internalWidth
@@ -94,6 +97,7 @@ export class OcclusionManager {
     const imageData = this.ctx.getImageData(0, 0, w, h)
 
     const px = imageData.data
+    this._inferInFlight = true
     Promise.all([
       this._send(this._segWorker, { pixels: px, width: w, height: h }),
       this._send(this._depthWorker, { pixels: px, width: w, height: h }),
@@ -103,6 +107,10 @@ export class OcclusionManager {
       const fused = fuseMasks(segMask, depthMap, w, h, this.opts.floorDepthThreshold)
       this.maskPixels.set(fused)
       this.maskDirty = true
+    }).catch(() => {
+      // inference error — skip frame, allow retry next interval
+    }).finally(() => {
+      this._inferInFlight = false
     })
   }
 
@@ -126,8 +134,12 @@ export class OcclusionManager {
   }
 
   destroy() {
+    this.ready = false
     this._segWorker?.terminate()
     this._depthWorker?.terminate()
+    for (const { reject } of this._pending.values()) {
+      reject(new Error('OcclusionManager destroyed'))
+    }
     this._pending.clear()
   }
 }

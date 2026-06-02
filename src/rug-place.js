@@ -17,9 +17,25 @@ let currentMaskTexture = null
 let currentMaskData = null
 let currentResolution = null
 
+let textureLoadSeq = 0
+let pendingObject3dListener = null
+let pendingObject3dEl = null
+
+function waitForVideo(callback) {
+  const existing = document.querySelector('video')
+  if (existing) { callback(existing); return }
+  const observer = new MutationObserver(() => {
+    const video = document.querySelector('video')
+    if (video) { observer.disconnect(); callback(video) }
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+}
+
 function applyTextureToRug(rugEl, src) {
+  const seq = ++textureLoadSeq
   const textureLoader = new THREE.TextureLoader()
   textureLoader.load(src, (texture) => {
+    if (seq !== textureLoadSeq) return
     texture.wrapS = THREE.RepeatWrapping
     texture.wrapT = THREE.RepeatWrapping
     texture.encoding = THREE.sRGBEncoding
@@ -28,20 +44,31 @@ function applyTextureToRug(rugEl, src) {
     if (mesh) {
       setRugMaterial(mesh, texture)
     } else {
-      rugEl.addEventListener('object3dset', () => {
+      if (pendingObject3dListener && pendingObject3dEl) {
+        pendingObject3dEl.removeEventListener('object3dset', pendingObject3dListener)
+      }
+      pendingObject3dListener = () => {
+        pendingObject3dListener = null
+        pendingObject3dEl = null
         const m = rugEl.getObject3D('mesh')
         if (m) setRugMaterial(m, texture)
-      }, { once: true })
+      }
+      pendingObject3dEl = rugEl
+      rugEl.addEventListener('object3dset', pendingObject3dListener, { once: true })
     }
   })
 }
 
 function setRugMaterial(mesh, texture) {
+  // Dispose old resources before creating new ones
+  if (currentMaskTexture) currentMaskTexture.dispose()
+  if (currentRugMaterial) currentRugMaterial.dispose()
+  currentRugMaterial = null
+  currentMaskTexture = null
+
+  // Apply only to first isMesh node — avoids dispose-on-multi-mesh bug
   mesh.traverse((node) => {
-    if (node.isMesh) {
-      if (currentRugMaterial) {
-        currentRugMaterial.dispose()
-      }
+    if (node.isMesh && !currentRugMaterial) {
       const { material, maskTexture, maskData, resolution } = createOcclusionRugMaterial({
         map: texture,
         width: MASK_W,
@@ -74,15 +101,13 @@ const rugPlaceComponent = {
     const fileInput = document.getElementById('file-input')
     const placeBtn = document.getElementById('place-btn')
 
-    setTimeout(() => {
-      const video = document.querySelector('video')
-      if (!video) return
+    waitForVideo((video) => {
       occlusionManager = new OcclusionManager(video, {
         internalWidth: MASK_W,
         internalHeight: MASK_H,
       })
-      occlusionManager.init()
-    }, 2000)
+      occlusionManager.init().catch(err => console.error('OcclusionManager init failed:', err))
+    })
 
     togglePanel.addEventListener('click', () => {
       const isVisible = designPanel.style.display !== 'none'
@@ -129,13 +154,16 @@ const rugPlaceComponent = {
       if (placedRug) {
         placedRug.parentNode.removeChild(placedRug)
         placedRug = null
+        if (currentMaskTexture) {
+          currentMaskTexture.dispose()
+          currentMaskTexture = null
+        }
         if (currentRugMaterial) {
           currentRugMaterial.dispose()
           currentRugMaterial = null
-          currentMaskTexture = null
-          currentMaskData = null
-          currentResolution = null
         }
+        currentMaskData = null
+        currentResolution = null
         removeBtn.style.display = 'none'
         placeBtn.textContent = 'Tap Floor to Place Rug'
       }
@@ -194,7 +222,7 @@ const rugPlaceComponent = {
     if (!occlusionManager || !occlusionManager.ready) return
 
     const canvas = this.el.sceneEl?.canvas
-    if (canvas && currentResolution) {
+    if (canvas && canvas.width > 0 && canvas.height > 0 && currentResolution) {
       currentResolution.set(canvas.width, canvas.height)
     }
 
@@ -202,6 +230,11 @@ const rugPlaceComponent = {
     if (occlusionManager.maskDirty) {
       updateOcclusionMask()
     }
+  },
+
+  remove() {
+    occlusionManager?.destroy()
+    occlusionManager = null
   },
 }
 
