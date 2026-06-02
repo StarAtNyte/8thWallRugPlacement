@@ -12,8 +12,21 @@
   </head>
 
   <body>
+    <!-- Full-screen tap capture layer (active only during segmenting state) -->
+    <div id="tap-area" style="pointer-events:none"></div>
+
+    <!-- Mask preview canvas (shown during segmenting) -->
+    <canvas id="mask-preview" style="display:none"></canvas>
+
+    <div id="scan-overlay">
+      <div id="scan-card">
+        <p id="scan-status">Preparing furniture detection…</p>
+        <button id="scan-btn" class="action-btn" disabled>Loading models…</button>
+      </div>
+    </div>
+
     <div id="ui-overlay">
-      <div id="design-panel">
+      <div id="design-panel" style="display:none">
         <h3>Select a Rug Design</h3>
         <div id="design-gallery">
           <div class="design-thumb selected" data-texture="assets/textures/Easther (Visualization).jpg">
@@ -32,7 +45,7 @@
         <input type="file" id="file-input" accept="image/*" hidden>
         <button id="place-btn" class="action-btn">Tap Floor to Place Rug</button>
       </div>
-      <button id="toggle-panel" class="toggle-btn">🎨</button>
+      <button id="toggle-panel" class="toggle-btn" style="display:none">🎨</button>
       <button id="remove-btn" class="action-btn remove-btn" style="display:none;">Remove Rug</button>
     </div>
 

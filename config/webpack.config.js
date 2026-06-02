@@ -33,7 +33,7 @@ module.exports = {
     static: distPath,
     server: 'https',
     host: '0.0.0.0',
-    port: 8080,
+    port: 8070,
     allowedHosts: 'all',
     onListening: (devServer) => {
       const port = devServer.server.address().port
@@ -42,6 +42,23 @@ module.exports = {
       console.log('\n📱 Scan QR code to open on mobile:\n')
       qrcode.generate(url, {small: true})
       console.log(`\n   ${url}\n`)
+    },
+    setupMiddlewares: (middlewares, devServer) => {
+      const chunks = []
+      devServer.app.post('/dev-log', (req, res) => {
+        req.on('data', chunk => chunks.push(chunk))
+        req.on('end', () => {
+          try {
+            const { level, msg } = JSON.parse(Buffer.concat(chunks).toString())
+            chunks.length = 0
+            const prefix = level === 'error' ? '\x1b[31m[ERR]\x1b[0m' : level === 'warn' ? '\x1b[33m[WRN]\x1b[0m' : '\x1b[36m[LOG]\x1b[0m'
+            console.log(`${prefix} ${msg}`)
+          } catch { chunks.length = 0 }
+          res.writeHead(204).end()
+        })
+      })
+      console.log('\x1b[36m[DevLog]\x1b[0m endpoint ready at /dev-log')
+      return middlewares
     },
   },
   module: {
@@ -97,7 +114,7 @@ module.exports = {
       patterns: [
         {from: 'external/', to: 'external/', noErrorOnMissing: true},
         {from: 'src/assets/', to: 'assets/', noErrorOnMissing: true},
-        {from: 'node_modules/onnxruntime-web/dist/ort-wasm*.wasm', to: 'external/wasm/[name][ext]', noErrorOnMissing: true},
+        {from: 'node_modules/onnxruntime-web/dist/ort-wasm*.{wasm,mjs}', to: 'external/wasm/[name][ext]', noErrorOnMissing: true},
       ],
     }),
   ],

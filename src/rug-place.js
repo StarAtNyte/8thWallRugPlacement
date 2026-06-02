@@ -60,13 +60,11 @@ function applyTextureToRug(rugEl, src) {
 }
 
 function setRugMaterial(mesh, texture) {
-  // Dispose old resources before creating new ones
   if (currentMaskTexture) currentMaskTexture.dispose()
   if (currentRugMaterial) currentRugMaterial.dispose()
   currentRugMaterial = null
   currentMaskTexture = null
 
-  // Apply only to first isMesh node — avoids dispose-on-multi-mesh bug
   mesh.traverse((node) => {
     if (node.isMesh && !currentRugMaterial) {
       const { material, maskTexture, maskData, resolution } = createOcclusionRugMaterial({
@@ -90,6 +88,22 @@ function updateOcclusionMask() {
   currentMaskTexture.needsUpdate = true
 }
 
+// Draw accumulated mask as a coloured overlay on the preview canvas
+function updateMaskPreview(maskPreviewCtx, maskPixels) {
+  const w = MASK_W
+  const h = MASK_H
+  const imgData = maskPreviewCtx.createImageData(w, h)
+  for (let i = 0; i < maskPixels.length; i++) {
+    if (maskPixels[i]) {
+      imgData.data[i * 4] = 255
+      imgData.data[i * 4 + 1] = 100
+      imgData.data[i * 4 + 2] = 0
+      imgData.data[i * 4 + 3] = 140
+    }
+  }
+  maskPreviewCtx.putImageData(imgData, 0, 0)
+}
+
 const rugPlaceComponent = {
   init() {
     const scene = this.el.sceneEl
@@ -100,13 +114,109 @@ const rugPlaceComponent = {
     const uploadBtn = document.getElementById('upload-btn')
     const fileInput = document.getElementById('file-input')
     const placeBtn = document.getElementById('place-btn')
+    const scanOverlay = document.getElementById('scan-overlay')
+    const scanBtn = document.getElementById('scan-btn')
+    const scanStatus = document.getElementById('scan-status')
+    const tapArea = document.getElementById('tap-area')
+    const maskPreviewCanvas = document.getElementById('mask-preview')
+    const maskPreviewCtx = maskPreviewCanvas.getContext('2d')
+
+    // scan states: 'loading' | 'ready' | 'encoding' | 'segmenting' | 'done'
+    let scanState = 'loading'
+    let scanReady = false
+
+    const setScanState = (state) => {
+      scanState = state
+      tapArea.style.pointerEvents = state === 'segmenting' ? 'auto' : 'none'
+      maskPreviewCanvas.style.display = state === 'segmenting' ? 'block' : 'none'
+
+      if (state === 'loading') {
+        scanBtn.textContent = 'Loading models…'
+        scanBtn.disabled = true
+        scanStatus.textContent = 'Preparing furniture detection…'
+      } else if (state === 'ready') {
+        scanBtn.textContent = 'Capture Frame'
+        scanBtn.disabled = false
+        scanBtn.classList.remove('scanning')
+        scanStatus.textContent = 'Point camera at your room, then capture.'
+      } else if (state === 'encoding') {
+        scanBtn.textContent = 'Analysing…'
+        scanBtn.disabled = true
+        scanStatus.textContent = 'Processing frame…'
+      } else if (state === 'segmenting') {
+        scanBtn.textContent = 'Done'
+        scanBtn.disabled = false
+        scanBtn.classList.add('scanning')
+        scanStatus.textContent = 'Tap each piece of furniture to mask it.'
+      } else if (state === 'done') {
+        scanReady = true
+        scanOverlay.classList.add('hidden')
+        designPanel.style.display = 'block'
+        togglePanel.style.display = 'flex'
+      }
+    }
+
+    const finishScan = () => {
+      maskPreviewCanvas.style.display = 'none'
+      setScanState('done')
+    }
 
     waitForVideo((video) => {
       occlusionManager = new OcclusionManager(video, {
         internalWidth: MASK_W,
         internalHeight: MASK_H,
       })
-      occlusionManager.init().catch(err => console.error('OcclusionManager init failed:', err))
+      occlusionManager.init()
+        .then(() => setScanState('ready'))
+        .catch((err) => {
+          console.error('OcclusionManager init failed:', err)
+          scanStatus.textContent = 'Furniture detection unavailable — you can still place rugs.'
+          scanBtn.textContent = 'Skip'
+          scanBtn.disabled = false
+          scanBtn.onclick = finishScan
+        })
+    })
+
+    scanBtn.addEventListener('click', () => {
+      if (scanState === 'ready') {
+        setScanState('encoding')
+        occlusionManager.captureAndEncode()
+          .then(() => {
+            maskPreviewCanvas.width = MASK_W
+            maskPreviewCanvas.height = MASK_H
+            setScanState('segmenting')
+          })
+          .catch((err) => {
+            console.error('Encode failed:', err)
+            setScanState('ready')
+          })
+        return
+      }
+
+      if (scanState === 'segmenting') {
+        finishScan()
+      }
+    })
+
+    // Map screen tap → video frame coords → decode
+    tapArea.addEventListener('click', async (e) => {
+      if (scanState !== 'segmenting') return
+
+      const screenW = window.innerWidth
+      const screenH = window.innerHeight
+      const videoX = (e.clientX / screenW) * MASK_W
+      const videoY = (e.clientY / screenH) * MASK_H
+
+      // Show tap dot
+      const dot = document.createElement('div')
+      dot.className = 'tap-dot'
+      dot.style.left = `${e.clientX}px`
+      dot.style.top = `${e.clientY}px`
+      document.body.appendChild(dot)
+      setTimeout(() => dot.remove(), 1200)
+
+      await occlusionManager.decodePoint(videoX, videoY)
+      updateMaskPreview(maskPreviewCtx, occlusionManager.maskPixels)
     })
 
     togglePanel.addEventListener('click', () => {
@@ -119,15 +229,11 @@ const rugPlaceComponent = {
         document.querySelectorAll('.design-thumb, .upload-thumb').forEach(t => t.classList.remove('selected'))
         thumb.classList.add('selected')
         selectedTextureSrc = thumb.getAttribute('data-texture')
-        if (placedRug) {
-          applyTextureToRug(placedRug, selectedTextureSrc)
-        }
+        if (placedRug) applyTextureToRug(placedRug, selectedTextureSrc)
       })
     })
 
-    uploadBtn.addEventListener('click', () => {
-      fileInput.click()
-    })
+    uploadBtn.addEventListener('click', () => fileInput.click())
 
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files[0]
@@ -143,33 +249,25 @@ const rugPlaceComponent = {
         img.src = dataUrl
         img.alt = 'Custom'
         uploadBtn.appendChild(img)
-        if (placedRug) {
-          applyTextureToRug(placedRug, selectedTextureSrc)
-        }
+        if (placedRug) applyTextureToRug(placedRug, selectedTextureSrc)
       }
       reader.readAsDataURL(file)
     })
 
     removeBtn.addEventListener('click', () => {
-      if (placedRug) {
-        placedRug.parentNode.removeChild(placedRug)
-        placedRug = null
-        if (currentMaskTexture) {
-          currentMaskTexture.dispose()
-          currentMaskTexture = null
-        }
-        if (currentRugMaterial) {
-          currentRugMaterial.dispose()
-          currentRugMaterial = null
-        }
-        currentMaskData = null
-        currentResolution = null
-        removeBtn.style.display = 'none'
-        placeBtn.textContent = 'Tap Floor to Place Rug'
-      }
+      if (!placedRug) return
+      placedRug.parentNode.removeChild(placedRug)
+      placedRug = null
+      if (currentMaskTexture) { currentMaskTexture.dispose(); currentMaskTexture = null }
+      if (currentRugMaterial) { currentRugMaterial.dispose(); currentRugMaterial = null }
+      currentMaskData = null
+      currentResolution = null
+      removeBtn.style.display = 'none'
+      placeBtn.textContent = 'Tap Floor to Place Rug'
     })
 
     ground.addEventListener('click', (event) => {
+      if (!scanReady) return
       const touchPoint = event.detail.intersection.point
 
       if (placedRug) {
@@ -188,12 +286,7 @@ const rugPlaceComponent = {
         y: touchPoint.y + (RUG_HEIGHT / 2) + 0.01,
         z: touchPoint.z,
       })
-      rug.setAttribute('geometry', {
-        primitive: 'box',
-        width: RUG_WIDTH,
-        height: RUG_HEIGHT,
-        depth: RUG_DEPTH,
-      })
+      rug.setAttribute('geometry', { primitive: 'box', width: RUG_WIDTH, height: RUG_HEIGHT, depth: RUG_DEPTH })
       rug.setAttribute('shadow', { receive: false, cast: true })
       rug.setAttribute('visible', 'false')
       rug.setAttribute('scale', '0.001 0.001 0.001')
@@ -208,7 +301,7 @@ const rugPlaceComponent = {
       rug.setAttribute('animation', {
         property: 'scale',
         to: '1 1 1',
-        easing: 'easeOutElastic',
+        easing: 'easeOutBack',
         dur: 800,
       })
 
@@ -226,10 +319,7 @@ const rugPlaceComponent = {
       currentResolution.set(canvas.width, canvas.height)
     }
 
-    occlusionManager.processFrame()
-    if (occlusionManager.maskDirty) {
-      updateOcclusionMask()
-    }
+    if (occlusionManager.maskDirty) updateOcclusionMask()
   },
 
   remove() {

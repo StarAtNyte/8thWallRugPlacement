@@ -5,7 +5,7 @@
   "scripts": {
     "build": "webpack --config config/webpack.config.js",
     "serve": "webpack-dev-server --mode=development --config config/webpack.config.js",
-    "setup-models": "cd external/models && curl -sL -o depth-anything-v2-small.onnx https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model_int8.onnx && curl -sL -o yolov8n-seg.onnx https://huggingface.co/Kalray/yolov8n-seg/resolve/main/yolov8n-seg.optimized.onnx && echo 'Models downloaded to external/models/'"
+    "setup-models": "cd external/models && curl -sL -o edge_sam_3x_encoder.onnx https://huggingface.co/spaces/chongzhou/EdgeSAM/resolve/main/weights/edge_sam_3x_encoder.onnx && curl -sL -o edge_sam_3x_decoder.onnx https://huggingface.co/spaces/chongzhou/EdgeSAM/resolve/main/weights/edge_sam_3x_decoder.onnx && echo 'EdgeSAM models downloaded to external/models/'"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

@@ -2,7 +2,6 @@ export function fuseMasks(segMask, depthMap, width, height, floorDepthThreshold 
   const result = new Uint8Array(width * height)
   for (let i = 0; i < result.length; i++) {
     if (!segMask[i]) continue
-    if (depthMap[i] > floorDepthThreshold) continue
     result[i] = 1
   }
   return erode(result, width, height, 2)

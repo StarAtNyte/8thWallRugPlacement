@@ -5,6 +5,7 @@ function toUnixPath(p) {
 }
 
 module.exports = function assetLoader() {
-  const srcPath = path.relative(this.rootContext, this.resourcePath)
+  const srcDir = path.resolve(this.rootContext, 'src')
+  const srcPath = path.relative(srcDir, this.resourcePath)
   return `module.exports = ${JSON.stringify(toUnixPath(srcPath))};`
 }

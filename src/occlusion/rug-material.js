@@ -2,7 +2,7 @@
 
 export function createOcclusionRugMaterial({ map, width, height }) {
   const maskData = new Uint8Array(width * height * 4)
-  maskData.fill(255)
+  maskData.fill(0)
   const maskTexture = new THREE.DataTexture(
     maskData, width, height,
     THREE.RGBAFormat, THREE.UnsignedByteType,
