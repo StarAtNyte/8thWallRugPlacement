@@ -45,8 +45,9 @@ self.onmessage = async (e) => {
       )
 
       const results = await session.run(feeds)
-      const masks = results[session.outputNames[0]]
-      const scores = results[session.outputNames[1]]
+      // EdgeSAM outputs: outputNames[0]='scores', outputNames[1]='masks'
+      const scores = results[session.outputNames[0]]
+      const masks = results[session.outputNames[1]]
 
       const numMasks = masks.dims[1]
       let best = 0

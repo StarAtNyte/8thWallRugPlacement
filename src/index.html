@@ -12,19 +12,6 @@
   </head>
 
   <body>
-    <!-- Full-screen tap capture layer (active only during segmenting state) -->
-    <div id="tap-area" style="pointer-events:none"></div>
-
-    <!-- Mask preview canvas (shown during segmenting) -->
-    <canvas id="mask-preview" style="display:none"></canvas>
-
-    <div id="scan-overlay">
-      <div id="scan-card">
-        <p id="scan-status">Preparing furniture detection…</p>
-        <button id="scan-btn" class="action-btn" disabled>Loading models…</button>
-      </div>
-    </div>
-
     <div id="ui-overlay">
       <div id="design-panel" style="display:none">
         <h3>Select a Rug Design</h3>
@@ -44,6 +31,7 @@
         </div>
         <input type="file" id="file-input" accept="image/*" hidden>
         <button id="place-btn" class="action-btn">Tap Floor to Place Rug</button>
+        <button id="furniture-btn" class="action-btn" style="margin-top:8px; background:#ff6b35">Mark Furniture</button>
       </div>
       <button id="toggle-panel" class="toggle-btn" style="display:none">🎨</button>
       <button id="remove-btn" class="action-btn remove-btn" style="display:none;">Remove Rug</button>
@@ -83,6 +71,8 @@
 
       <a-light type="ambient" intensity="0.5"></a-light>
 
+      <!-- Large invisible floor for raycaster hit detection and shadow receiving.
+           XR8.XrController.hitTest() is also called on each tap for accuracy. -->
       <a-box
         id="ground"
         class="cantap"

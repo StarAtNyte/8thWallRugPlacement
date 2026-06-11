@@ -186,6 +186,10 @@
   background: #00a8cc;
 }
 
+#furniture-btn.active {
+  background: #555;
+}
+
 .toggle-btn {
   position: absolute;
   bottom: 20px;
