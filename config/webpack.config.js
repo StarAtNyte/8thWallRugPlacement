@@ -63,27 +63,12 @@ module.exports = {
         use: ['style-loader', 'css-loader'],
       },
       {
-        test: /\.(png|jpe?g|gif|svg|glb|gltf)$/i,
-        include: path.join(srcPath, 'assets'),
-        use: [
-          {
-            loader: path.resolve(__dirname, 'asset-loader.js'),
-          },
-        ],
-      },
-      {
         test: /\.html$/,
         use: [
           {
             loader: 'html-loader',
-            options: {
-              sources: {
-                list: [
-                  {tag: 'img', attribute: 'src', type: 'src'},
-                  {tag: 'a-asset-item', attribute: 'src', type: 'src'},
-                ],
-              },
-            },
+            // Keep asset paths as written; CopyWebpackPlugin serves src/assets/.
+            options: {sources: false},
           },
         ],
       },
