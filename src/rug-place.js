@@ -3,7 +3,7 @@
 // Scene units are metres: the camera starts at y = 1.6 (see index.html) and
 // 8th Wall's responsive scale maps that to the phone's real height, so the
 // floor is y = 0.
-const DEFAULT_WIDTH_CM = 48
+const DEFAULT_WIDTH_CM = 100
 const RUG_LIFT = 0.005       // sit just above the floor
 const PICKUP_HEIGHT = 0.25   // how far the rug rises while held (8th Wall hold-drag)
 
