@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AR Rug Placer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+    <script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
+    <script crossorigin="anonymous" src="./external/xrextras/xrextras.js"></script>
+    <script crossorigin="anonymous" src="./external/landing-page/landing-page.js"></script>
+    <script crossorigin="anonymous" src="./external/xr/xr.js" async="true" data-preload-chunks="slam"></script>
+  </head>
+
+  <body>
+    <div id="ui-overlay">
+      <div id="design-panel" style="display:none">
+        <h3>Select a Rug Design</h3>
+        <div id="design-gallery">
+          <div class="design-thumb selected" data-texture="assets/textures/Easther (Visualization).jpg">
+            <img src="assets/textures/Easther (Visualization).jpg" alt="Easther">
+          </div>
+          <div class="design-thumb" data-texture="assets/textures/Flathunet (Visualization).jpg">
+            <img src="assets/textures/Flathunet (Visualization).jpg" alt="Flathunet">
+          </div>
+          <div class="design-thumb" data-texture="assets/textures/image2.png">
+            <img src="assets/textures/image2.png" alt="Design 3">
+          </div>
+          <div class="upload-thumb" id="upload-btn">
+            <span>+ Upload</span>
+          </div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" hidden>
+        <button id="place-btn" class="action-btn">Tap Floor to Place Rug</button>
+        <button id="furniture-btn" class="action-btn" style="margin-top:8px; background:#ff6b35">Mark Furniture</button>
+      </div>
+      <button id="toggle-panel" class="toggle-btn" style="display:none">🎨</button>
+      <button id="remove-btn" class="action-btn remove-btn" style="display:none;">Remove Rug</button>
+    </div>
+
+    <a-scene
+      rug-place
+      xrextras-gesture-detector
+      landing-page
+      xrextras-loading
+      xrextras-runtime-error
+      renderer="colorManagement: true"
+      xrweb="allowedDevices: any">
+
+      <a-camera
+        id="camera"
+        position="0 8 0"
+        raycaster="objects: .cantap"
+        cursor="fuse: false; rayOrigin: mouse;">
+      </a-camera>
+
+      <a-entity
+        light="
+          type: directional;
+          intensity: 0.8;
+          castShadow: true;
+          shadowMapHeight: 2048;
+          shadowMapWidth: 2048;
+          shadowCameraTop: 20;
+          shadowCameraBottom: -20;
+          shadowCameraRight: 20;
+          shadowCameraLeft: -20;
+          target: #camera"
+        xrextras-attach="target: camera; offset: 8 15 4"
+        shadow>
+      </a-entity>
+
+      <a-light type="ambient" intensity="0.5"></a-light>
+
+      <!-- Large invisible floor for raycaster hit detection and shadow receiving.
+           XR8.XrController.hitTest() is also called on each tap for accuracy. -->
+      <a-box
+        id="ground"
+        class="cantap"
+        scale="1000 2 1000"
+        position="0 -1 0"
+        material="shader: shadow; transparent: true; opacity: 0.4"
+        shadow>
+      </a-box>
+    </a-scene>
+
+    <script src="bundle.js"></script>
+  </body>
+</html>

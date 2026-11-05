@@ -4,8 +4,7 @@
   "description": "AR Rug Placer - Place custom design rugs on your floor using WebAR",
   "scripts": {
     "build": "webpack --config config/webpack.config.js",
-    "serve": "webpack-dev-server --mode=development --config config/webpack.config.js",
-    "setup-models": "cd external/models && curl -sL -o edge_sam_3x_encoder.onnx https://huggingface.co/spaces/chongzhou/EdgeSAM/resolve/main/weights/edge_sam_3x_encoder.onnx && curl -sL -o edge_sam_3x_decoder.onnx https://huggingface.co/spaces/chongzhou/EdgeSAM/resolve/main/weights/edge_sam_3x_decoder.onnx && echo 'EdgeSAM models downloaded to external/models/'"
+    "serve": "webpack-dev-server --mode=development --config config/webpack.config.js"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
@@ -22,6 +21,6 @@
     "webpack-dev-server": "^5.2.2"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.26.0"
+    "qrcode": "^1.5.4"
   }
 }

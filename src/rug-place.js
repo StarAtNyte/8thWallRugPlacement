@@ -1,289 +1,161 @@
-/* globals THREE, XR8 */
+/* globals THREE */
 
-import { createFloorGrid } from './floor-grid'
-import { initWorldMeshOccluder } from './world-mesh-occluder'
-
-const RUG_WIDTH       = 3
-const RUG_DEPTH       = 4
-const RUG_HEIGHT      = 0.02
-const OCCLUDER_HEIGHT = 1.5   // metres — typical furniture height
-
-let selectedTextureSrc = 'assets/textures/Easther (Visualization).jpg'
-let placedRug    = null
-let floorGrid    = null
-let floorY       = 0
-
-// Touch tracking — needed to feed correct coords into XR8.XrController.hitTest()
-let lastTouchX = 0
-let lastTouchY = 0
-
-// Furniture marking state
-let furnitureMode = false
-let cornerA       = null   // first tap {x,y,z}
-let cornerADot    = null   // small sphere showing first corner
-const occluderBoxes = []
-
-let _occluderMat = null
-function getOccluderMat() {
-  if (!_occluderMat) {
-    _occluderMat = new THREE.MeshBasicMaterial({
-      colorWrite: false,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.DoubleSide,
-    })
-  }
-  return _occluderMat
-}
-
-let textureLoadSeq = 0
-let pendingListener = null
-let pendingEl = null
-
-function applyTextureToRug(rugEl, src) {
-  const seq = ++textureLoadSeq
-  new THREE.TextureLoader().load(src, (texture) => {
-    if (seq !== textureLoadSeq) return
-    texture.wrapS = THREE.RepeatWrapping
-    texture.wrapT = THREE.RepeatWrapping
-    texture.encoding = THREE.sRGBEncoding
-    const mesh = rugEl.getObject3D('mesh')
-    if (mesh) {
-      setMaterial(mesh, texture)
-    } else {
-      if (pendingListener && pendingEl) pendingEl.removeEventListener('object3dset', pendingListener)
-      pendingListener = () => {
-        pendingListener = null; pendingEl = null
-        const m = rugEl.getObject3D('mesh')
-        if (m) setMaterial(m, texture)
-      }
-      pendingEl = rugEl
-      rugEl.addEventListener('object3dset', pendingListener, { once: true })
-    }
-  })
-}
-
-function setMaterial(mesh, texture) {
-  mesh.traverse((node) => {
-    if (!node.isMesh) return
-    node.material = new THREE.MeshStandardMaterial({
-      map: texture,
-      roughness: 0.9,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-    })
-    node.material.needsUpdate = true
-  })
-}
-
-// XR8 hit test — falls back to raycaster point if tracking not ready
-function hitTest(clientX, clientY, fallback) {
-  if (window.XR8 && XR8.XrController && XR8.XrController.hitTest) {
-    try {
-      const hits = XR8.XrController.hitTest(
-        clientX / window.innerWidth,
-        clientY / window.innerHeight,
-        ['FEATURE_POINT', 'PLANE'],
-      )
-      if (hits.length > 0) return hits[0].position
-    } catch (_) {}
-  }
-  return fallback
-}
-
-function placeFurnitureOccluder(threeScene, a, b) {
-  const w  = Math.max(Math.abs(b.x - a.x), 0.3)
-  const d  = Math.max(Math.abs(b.z - a.z), 0.3)
-  const cx = (a.x + b.x) / 2
-  const cz = (a.z + b.z) / 2
-  const fy = Math.min(a.y, b.y)
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(w, OCCLUDER_HEIGHT, d),
-    getOccluderMat(),
-  )
-  box.position.set(cx, fy + OCCLUDER_HEIGHT / 2, cz)
-  box.renderOrder = -1
-  threeScene.add(box)
-  occluderBoxes.push(box)
-}
+// Scene units are metres: the camera starts at y = 1.6 (see index.html) and
+// 8th Wall's responsive scale maps that to the phone's real height, so the
+// floor is y = 0.
+const DEFAULT_WIDTH_CM = 160
+const RUG_LIFT = 0.005       // sit just above the floor
 
 const rugPlaceComponent = {
   init() {
-    const scene      = this.el.sceneEl
-    const threeScene = scene.object3D
+    this.rug = null          // parent: position + rotation, dragged by xrextras
+    this.rugMesh = null      // child: the flat textured plane
+    this.texture = null
+    this.aspect = 1.25       // length / width, updated from the image
+    this.loadSeq = 0
 
-    const ground       = document.getElementById('ground')
-    const designPanel  = document.getElementById('design-panel')
-    const togglePanel  = document.getElementById('toggle-panel')
-    const removeBtn    = document.getElementById('remove-btn')
-    const uploadBtn    = document.getElementById('upload-btn')
-    const fileInput    = document.getElementById('file-input')
-    const placeBtn     = document.getElementById('place-btn')
-    const furnitureBtn = document.getElementById('furniture-btn')
-    const scanOverlay  = document.getElementById('scan-overlay')
+    const $ = (id) => document.getElementById(id)
+    this.ui = {
+      hint: $('hint'),
+      controls: $('rug-controls'),
+      size: $('size-slider'),
+      sizeLabel: $('size-label'),
+      rotate: $('rotate-slider'),
+      rotateLabel: $('rotate-label'),
+      remove: $('remove-btn'),
+      upload: $('upload-btn'),
+      file: $('file-input'),
+      panel: $('design-panel'),
+    }
+    this.ui.size.value = DEFAULT_WIDTH_CM
 
-    if (scanOverlay) scanOverlay.style.display = 'none'
-    designPanel.style.display = 'block'
-    togglePanel.style.display = 'flex'
+    this.loadTexture(document.querySelector('.design-thumb.selected').dataset.texture)
 
-    // Floor grid
-    floorGrid = createFloorGrid()
-    threeScene.add(floorGrid.mesh)
-    floorGrid.show(0)
+    $('ground').addEventListener('click', (e) => this.placeAt(e.detail.intersection.point))
 
-    // SLAM world mesh → depth-only occluder
-    initWorldMeshOccluder(threeScene)
-
-    // Track touch position for XR8 hit test
-    document.addEventListener('touchstart', (e) => {
-      const t = e.touches[0]
-      if (t) { lastTouchX = t.clientX; lastTouchY = t.clientY }
-    }, { passive: true })
-
-    // ── Floor tap (rug placement or furniture corner) ────────────────────────
-    ground.addEventListener('click', (event) => {
-      const fp = event.detail.intersection.point
-      const pos = hitTest(lastTouchX, lastTouchY, { x: fp.x, y: fp.y, z: fp.z })
-
-      if (furnitureMode) {
-        if (!cornerA) {
-          // First corner — drop a marker sphere
-          cornerA = { ...pos }
-          const dot = new THREE.Mesh(
-            new THREE.SphereGeometry(0.05, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xff6b35 }),
-          )
-          dot.position.set(pos.x, pos.y + 0.06, pos.z)
-          threeScene.add(dot)
-          cornerADot = dot
-        } else {
-          // Second corner — create the occluder box
-          placeFurnitureOccluder(threeScene, cornerA, pos)
-          threeScene.remove(cornerADot)
-          cornerADot = null
-          cornerA = null
-        }
-        return
-      }
-
-      // ── Rug mode ────────────────────────────────────────────────────────────
-      floorY = pos.y
-      floorGrid.setFloorY(floorY)
-
-      if (placedRug) {
-        placedRug.setAttribute('position', {
-          x: pos.x,
-          y: floorY + RUG_HEIGHT / 2 + 0.01,
-          z: pos.z,
-        })
-        return
-      }
-
-      const rug = document.createElement('a-entity')
-      rug.setAttribute('class', 'cantap')
-      rug.setAttribute('position', { x: pos.x, y: floorY + RUG_HEIGHT / 2 + 0.01, z: pos.z })
-      rug.setAttribute('geometry', { primitive: 'box', width: RUG_WIDTH, height: RUG_HEIGHT, depth: RUG_DEPTH })
-      rug.setAttribute('shadow', { receive: false, cast: true })
-      rug.setAttribute('visible', 'false')
-      rug.setAttribute('scale', '0.001 0.001 0.001')
-      rug.setAttribute('xrextras-hold-drag', '')
-      rug.setAttribute('xrextras-two-finger-rotate', '')
-      rug.setAttribute('xrextras-pinch-scale', '')
-
-      scene.appendChild(rug)
-      applyTextureToRug(rug, selectedTextureSrc)
-      rug.setAttribute('visible', 'true')
-      rug.setAttribute('animation', { property: 'scale', to: '1 1 1', easing: 'easeOutBack', dur: 800 })
-
-      placedRug = rug
-      removeBtn.style.display = 'block'
-      placeBtn.textContent = 'Tap to Reposition'
-      floorGrid.hide()
-    })
-
-    // ── Design gallery ───────────────────────────────────────────────────────
     document.querySelectorAll('.design-thumb').forEach((thumb) => {
       thumb.addEventListener('click', () => {
-        document.querySelectorAll('.design-thumb, .upload-thumb').forEach(t => t.classList.remove('selected'))
-        thumb.classList.add('selected')
-        selectedTextureSrc = thumb.getAttribute('data-texture')
-        if (placedRug) applyTextureToRug(placedRug, selectedTextureSrc)
+        this.select(thumb)
+        this.loadTexture(thumb.dataset.texture)
       })
     })
 
-    uploadBtn.addEventListener('click', () => fileInput.click())
-
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0]
+    this.ui.upload.addEventListener('click', () => this.ui.file.click())
+    this.ui.file.addEventListener('change', () => {
+      const file = this.ui.file.files[0]
       if (!file) return
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const dataUrl = ev.target.result
-        document.querySelectorAll('.design-thumb, .upload-thumb').forEach(t => t.classList.remove('selected'))
-        uploadBtn.classList.add('selected')
-        selectedTextureSrc = dataUrl
-        uploadBtn.innerHTML = ''
-        const img = document.createElement('img')
-        img.src = dataUrl; img.alt = 'Custom'
-        uploadBtn.appendChild(img)
-        if (placedRug) applyTextureToRug(placedRug, selectedTextureSrc)
-      }
-      reader.readAsDataURL(file)
+      const url = URL.createObjectURL(file)
+      this.ui.upload.innerHTML = `<img src="${url}" alt="Custom">`
+      this.select(this.ui.upload)
+      this.loadTexture(url)
+      this.ui.file.value = ''
     })
 
-    // ── Remove rug ───────────────────────────────────────────────────────────
-    removeBtn.addEventListener('click', () => {
-      if (!placedRug) return
-      placedRug.parentNode.removeChild(placedRug)
-      placedRug = null
-      removeBtn.style.display = 'none'
-      placeBtn.textContent = 'Tap Floor to Place Rug'
-      floorGrid.show(floorY)
-    })
+    this.ui.size.addEventListener('input', () => this.updateSize())
+    this.ui.rotate.addEventListener('input', () => this.updateRotation())
+    this.ui.remove.addEventListener('click', () => this.removeRug())
+    $('toggle-panel').addEventListener('click', () => this.ui.panel.classList.toggle('hidden'))
 
-    // ── Toggle design panel ──────────────────────────────────────────────────
-    togglePanel.addEventListener('click', () => {
-      designPanel.style.display = designPanel.style.display !== 'none' ? 'none' : 'block'
-    })
+    this.updateSize()
+    this.updateRotation()
+  },
 
-    // ── Furniture marking mode ───────────────────────────────────────────────
-    furnitureBtn.addEventListener('click', () => {
-      furnitureMode = !furnitureMode
-      if (furnitureMode) {
-        furnitureBtn.textContent = 'Done Marking'
-        furnitureBtn.classList.add('active')
-        // Cancel any in-progress corner
-        cornerA = null
-        if (cornerADot) { threeScene.remove(cornerADot); cornerADot = null }
-      } else {
-        furnitureBtn.textContent = 'Mark Furniture'
-        furnitureBtn.classList.remove('active')
-        if (cornerADot) { threeScene.remove(cornerADot); cornerADot = null }
-        cornerA = null
-      }
+  select(el) {
+    document.querySelectorAll('.design-thumb, .upload-thumb').forEach((t) => t.classList.remove('selected'))
+    el.classList.add('selected')
+  },
+
+  loadTexture(src) {
+    const seq = ++this.loadSeq
+    new THREE.TextureLoader().load(src, (texture) => {
+      if (seq !== this.loadSeq) { texture.dispose(); return }
+      if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace
+      else texture.encoding = THREE.sRGBEncoding
+      texture.anisotropy = this.el.sceneEl.renderer.capabilities.getMaxAnisotropy()
+
+      const old = this.texture
+      this.texture = texture
+      this.aspect = texture.image.height / texture.image.width
+      this.updateSize()
+      this.applyMaterial()
+      if (old) old.dispose()
     })
   },
 
-  tick() {
-    if (!floorGrid || !floorGrid.mesh.visible) return
-    const cam = this.el.camera
-    if (cam) floorGrid.updateCamera(cam.position.x, cam.position.z)
+  widthMetres() {
+    return Number(this.ui.size.value) / 100
   },
 
-  remove() {
-    if (floorGrid) {
-      this.el.sceneEl.object3D.remove(floorGrid.mesh)
-      floorGrid.mesh.geometry.dispose()
-      floorGrid.mesh.material.dispose()
-      floorGrid = null
+  updateSize() {
+    const w = Number(this.ui.size.value)
+    this.ui.sizeLabel.textContent = `${w} × ${Math.round(w * this.aspect)} cm`
+    if (!this.rugMesh) return
+    this.rugMesh.setAttribute('geometry', {
+      primitive: 'plane',
+      width: this.widthMetres(),
+      height: this.widthMetres() * this.aspect,
+    })
+  },
+
+  updateRotation() {
+    const deg = Number(this.ui.rotate.value)
+    this.ui.rotateLabel.textContent = `${deg}°`
+    if (this.rug) this.rug.object3D.rotation.y = THREE.MathUtils.degToRad(-deg)
+  },
+
+  applyMaterial() {
+    const mesh = this.rugMesh && this.rugMesh.getObject3D('mesh')
+    if (!mesh || !this.texture || mesh.material.map === this.texture) return
+    mesh.material.dispose()
+    mesh.material = new THREE.MeshStandardMaterial({
+      map: this.texture,
+      roughness: 1,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    })
+  },
+
+  placeAt(point) {
+    if (this.rug) {
+      this.rug.object3D.position.set(point.x, point.y, point.z)
+      return
     }
-    occluderBoxes.forEach((b) => {
-      this.el.sceneEl.object3D.remove(b)
-      b.geometry.dispose()
-    })
-    occluderBoxes.length = 0
-    if (_occluderMat) { _occluderMat.dispose(); _occluderMat = null }
+
+    const rug = document.createElement('a-entity')
+    rug.setAttribute('position', {x: point.x, y: point.y, z: point.z})
+    rug.setAttribute('xrextras-hold-drag', 'riseHeight: 0')
+
+    const rugMesh = document.createElement('a-entity')
+    rugMesh.classList.add('cantap')
+    rugMesh.setAttribute('position', {x: 0, y: RUG_LIFT, z: 0})
+    rugMesh.setAttribute('rotation', '-90 0 0')
+    rug.appendChild(rugMesh)
+
+    this.rug = rug
+    this.rugMesh = rugMesh
+    rugMesh.addEventListener('loaded', () => {
+      this.updateSize()
+      this.updateRotation()
+      this.applyMaterial()
+    }, {once: true})
+    this.el.sceneEl.appendChild(rug)
+
+    this.ui.controls.hidden = false
+    this.ui.remove.hidden = false
+    this.ui.hint.textContent = 'Tap the floor to move it, or hold and drag the rug'
+  },
+
+  removeRug() {
+    if (!this.rug) return
+    const mesh = this.rugMesh.getObject3D('mesh')
+    if (mesh) mesh.material.dispose()
+    this.rug.parentNode.removeChild(this.rug)
+    this.rug = null
+    this.rugMesh = null
+    this.ui.controls.hidden = true
+    this.ui.remove.hidden = true
+    this.ui.hint.textContent = 'Tap the floor to place the rug'
   },
 }
 
-export { rugPlaceComponent }
+export {rugPlaceComponent}

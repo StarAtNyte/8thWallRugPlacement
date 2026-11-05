@@ -4,84 +4,84 @@
     <meta charset="utf-8">
     <title>AR Rug Placer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
-    <script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
-    <script crossorigin="anonymous" src="./external/xrextras/xrextras.js"></script>
-    <script crossorigin="anonymous" src="./external/landing-page/landing-page.js"></script>
-    <script crossorigin="anonymous" src="./external/xr/xr.js" async="true" data-preload-chunks="slam"></script>
   </head>
 
   <body>
-    <div id="ui-overlay">
-      <div id="design-panel" style="display:none">
-        <h3>Select a Rug Design</h3>
-        <div id="design-gallery">
-          <div class="design-thumb selected" data-texture="assets/textures/Easther (Visualization).jpg">
-            <img src="assets/textures/Easther (Visualization).jpg" alt="Easther">
-          </div>
-          <div class="design-thumb" data-texture="assets/textures/Flathunet (Visualization).jpg">
-            <img src="assets/textures/Flathunet (Visualization).jpg" alt="Flathunet">
-          </div>
-          <div class="design-thumb" data-texture="assets/textures/image2.png">
-            <img src="assets/textures/image2.png" alt="Design 3">
-          </div>
-          <div class="upload-thumb" id="upload-btn">
-            <span>+ Upload</span>
-          </div>
-        </div>
-        <input type="file" id="file-input" accept="image/*" hidden>
-        <button id="place-btn" class="action-btn">Tap Floor to Place Rug</button>
-        <button id="furniture-btn" class="action-btn" style="margin-top:8px; background:#ff6b35">Mark Furniture</button>
-      </div>
-      <button id="toggle-panel" class="toggle-btn" style="display:none">🎨</button>
-      <button id="remove-btn" class="action-btn remove-btn" style="display:none;">Remove Rug</button>
+    <!-- Shown on desktop only. -->
+    <div id="desktop-qr" hidden>
+      <h1>AR Rug Placer</h1>
+      <p>Scan with your phone's camera to place a rug on your floor.</p>
+      <canvas id="qr-canvas"></canvas>
+      <p id="qr-url"></p>
+      <p class="qr-note">Your phone must be on the same Wi-Fi. Accept the certificate warning when it appears.</p>
     </div>
 
-    <a-scene
-      rug-place
-      xrextras-gesture-detector
-      landing-page
-      xrextras-loading
-      xrextras-runtime-error
-      renderer="colorManagement: true"
-      xrweb="allowedDevices: any">
+    <!-- AR app, inserted by app.js on phones and tablets only. -->
+    <template id="ar-template">
+      <div id="ui-overlay">
+        <p id="hint">Tap the floor to place the rug</p>
+        <button id="remove-btn" class="remove-btn" hidden>Remove rug</button>
 
-      <a-camera
-        id="camera"
-        position="0 8 0"
-        raycaster="objects: .cantap"
-        cursor="fuse: false; rayOrigin: mouse;">
-      </a-camera>
+        <div id="design-panel">
+          <div id="rug-controls" hidden>
+            <label class="slider-row">
+              <span>Size</span>
+              <input type="range" id="size-slider" min="60" max="400" step="10">
+              <output id="size-label"></output>
+            </label>
+            <label class="slider-row">
+              <span>Rotate</span>
+              <input type="range" id="rotate-slider" min="0" max="360" step="5" value="0">
+              <output id="rotate-label"></output>
+            </label>
+          </div>
+          <div id="design-gallery">
+            <button class="design-thumb selected" data-texture="assets/textures/Easther (Visualization).jpg">
+              <img src="assets/textures/Easther (Visualization).jpg" alt="Easther">
+            </button>
+            <button class="design-thumb" data-texture="assets/textures/Flathunet (Visualization).jpg">
+              <img src="assets/textures/Flathunet (Visualization).jpg" alt="Flathunet">
+            </button>
+            <button class="design-thumb" data-texture="assets/textures/image2.png">
+              <img src="assets/textures/image2.png" alt="Design 3">
+            </button>
+            <button class="upload-thumb" id="upload-btn"><span>+ Upload</span></button>
+          </div>
+          <input type="file" id="file-input" accept="image/*" hidden>
+        </div>
+        <button id="toggle-panel" class="toggle-btn" aria-label="Show or hide controls">🎨</button>
+      </div>
 
-      <a-entity
-        light="
-          type: directional;
-          intensity: 0.8;
-          castShadow: true;
-          shadowMapHeight: 2048;
-          shadowMapWidth: 2048;
-          shadowCameraTop: 20;
-          shadowCameraBottom: -20;
-          shadowCameraRight: 20;
-          shadowCameraLeft: -20;
-          target: #camera"
-        xrextras-attach="target: camera; offset: 8 15 4"
-        shadow>
-      </a-entity>
+      <a-scene
+        rug-place
+        xrextras-gesture-detector
+        xrextras-loading
+        xrextras-runtime-error
+        renderer="colorManagement: true"
+        xrweb="allowedDevices: any">
 
-      <a-light type="ambient" intensity="0.5"></a-light>
+        <!-- Camera height in metres; 8th Wall scales the world so the floor is y = 0. -->
+        <a-camera
+          id="camera"
+          position="0 1.6 0"
+          raycaster="objects: .cantap"
+          cursor="fuse: false; rayOrigin: mouse;">
+        </a-camera>
 
-      <!-- Large invisible floor for raycaster hit detection and shadow receiving.
-           XR8.XrController.hitTest() is also called on each tap for accuracy. -->
-      <a-box
-        id="ground"
-        class="cantap"
-        scale="1000 2 1000"
-        position="0 -1 0"
-        material="shader: shadow; transparent: true; opacity: 0.4"
-        shadow>
-      </a-box>
-    </a-scene>
+        <a-light type="ambient" intensity="0.7"></a-light>
+        <a-light type="directional" intensity="0.6" position="1 4 2"></a-light>
+
+        <!-- Invisible floor plane used to find where a tap hits the ground. -->
+        <a-plane
+          id="ground"
+          class="cantap"
+          rotation="-90 0 0"
+          width="200"
+          height="200"
+          material="opacity: 0; transparent: true; depthWrite: false">
+        </a-plane>
+      </a-scene>
+    </template>
 
     <script src="bundle.js"></script>
   </body>

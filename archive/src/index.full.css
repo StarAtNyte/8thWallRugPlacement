@@ -1,0 +1,220 @@
+#tap-area {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+}
+
+#mask-preview {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 14;
+  pointer-events: none;
+}
+
+#scan-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 20;
+  padding-bottom: 20px;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+#scan-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#scan-card {
+  margin: 0 auto;
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 16px;
+  padding: 16px;
+  width: 90%;
+  max-width: 400px;
+  pointer-events: auto;
+  text-align: center;
+}
+
+#scan-status {
+  color: #fff;
+  font-family: sans-serif;
+  font-size: 14px;
+  margin: 0 0 12px 0;
+}
+
+#scan-btn.scanning {
+  background: #ff6b35;
+  animation: scan-pulse 1.5s ease-in-out infinite;
+}
+
+#scan-btn:disabled {
+  background: #555;
+  color: #999;
+  cursor: not-allowed;
+}
+
+@keyframes scan-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.tap-dot {
+  position: fixed;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 107, 53, 0.8);
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 30;
+  animation: tap-dot-anim 1.2s ease-out forwards;
+}
+
+@keyframes tap-dot-anim {
+  0%   { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+  60%  { transform: translate(-50%, -50%) scale(1.2); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
+#ui-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#ui-overlay * {
+  pointer-events: auto;
+}
+
+#design-panel {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 16px;
+  padding: 16px;
+  width: 90%;
+  max-width: 400px;
+  display: block;
+}
+
+#design-panel h3 {
+  color: #fff;
+  margin: 0 0 12px 0;
+  font-family: sans-serif;
+  font-size: 14px;
+  text-align: center;
+}
+
+#design-gallery {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.design-thumb,
+.upload-thumb {
+  width: 70px;
+  height: 70px;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 3px solid transparent;
+  flex-shrink: 0;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.design-thumb img,
+.upload-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.design-thumb.selected,
+.upload-thumb.selected {
+  border-color: #00d4ff;
+  transform: scale(1.08);
+}
+
+.upload-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  border: 3px dashed rgba(255, 255, 255, 0.4);
+}
+
+.upload-thumb span {
+  color: #fff;
+  font-family: sans-serif;
+  font-size: 12px;
+  text-align: center;
+}
+
+.action-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  background: #00d4ff;
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  font-family: sans-serif;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  text-align: center;
+}
+
+.action-btn:active {
+  background: #00a8cc;
+}
+
+#furniture-btn.active {
+  background: #555;
+}
+
+.toggle-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: auto;
+  max-width: 160px;
+  background: #ff4444;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
