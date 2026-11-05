@@ -3,12 +3,29 @@
 // Scene units are metres: the camera starts at y = 1.6 (see index.html) and
 // 8th Wall's responsive scale maps that to the phone's real height, so the
 // floor is y = 0.
-const DEFAULT_WIDTH_CM = 160
+const DEFAULT_WIDTH_CM = 48
 const RUG_LIFT = 0.005       // sit just above the floor
+const PICKUP_HEIGHT = 0.25   // how far the rug rises while held (8th Wall hold-drag)
+
+// Soft rectangular shadow drawn once to a canvas; reused for every rug.
+let shadowTexture = null
+function getShadowTexture() {
+  if (shadowTexture) return shadowTexture
+  const c = document.createElement('canvas')
+  c.width = c.height = 256
+  const ctx = c.getContext('2d')
+  ctx.filter = 'blur(18px)'
+  ctx.fillStyle = 'rgba(0,0,0,1)'
+  ctx.fillRect(40, 40, 176, 176)
+  shadowTexture = new THREE.CanvasTexture(c)
+  return shadowTexture
+}
 
 const rugPlaceComponent = {
   init() {
     this.rug = null          // parent: position + rotation, dragged by xrextras
+    this.shadow = null       // stays on the floor under the rug
+    this.wasDragging = false
     this.rugMesh = null      // child: the flat textured plane
     this.texture = null
     this.aspect = 1.25       // length / width, updated from the image
@@ -100,7 +117,10 @@ const rugPlaceComponent = {
   updateRotation() {
     const deg = Number(this.ui.rotate.value)
     this.ui.rotateLabel.textContent = `${deg}°`
-    if (this.rug) this.rug.object3D.rotation.y = THREE.MathUtils.degToRad(-deg)
+    if (!this.rug) return
+    const rad = THREE.MathUtils.degToRad(-deg)
+    this.rug.object3D.rotation.y = rad
+    this.shadow.object3D.rotation.z = rad
   },
 
   applyMaterial() {
@@ -123,7 +143,7 @@ const rugPlaceComponent = {
 
     const rug = document.createElement('a-entity')
     rug.setAttribute('position', {x: point.x, y: point.y, z: point.z})
-    rug.setAttribute('xrextras-hold-drag', 'riseHeight: 0')
+    rug.setAttribute('xrextras-hold-drag', `riseHeight: ${PICKUP_HEIGHT}`)
 
     const rugMesh = document.createElement('a-entity')
     rugMesh.classList.add('cantap')
@@ -131,8 +151,20 @@ const rugPlaceComponent = {
     rugMesh.setAttribute('rotation', '-90 0 0')
     rug.appendChild(rugMesh)
 
+    const shadow = document.createElement('a-entity')
+    shadow.setAttribute('geometry', 'primitive: plane; width: 1; height: 1')
+    shadow.setAttribute('rotation', '-90 0 0')
+    shadow.setAttribute('position', {x: point.x, y: RUG_LIFT / 2, z: point.z})
+    shadow.addEventListener('loaded', () => {
+      shadow.getObject3D('mesh').material = new THREE.MeshBasicMaterial({
+        map: getShadowTexture(), transparent: true, opacity: 0.45, depthWrite: false,
+      })
+    }, {once: true})
+    this.el.sceneEl.appendChild(shadow)
+
     this.rug = rug
     this.rugMesh = rugMesh
+    this.shadow = shadow
     rugMesh.addEventListener('loaded', () => {
       this.updateSize()
       this.updateRotation()
@@ -145,13 +177,34 @@ const rugPlaceComponent = {
     this.ui.hint.textContent = 'Tap the floor to move it, or hold and drag the rug'
   },
 
+  // Keep the shadow on the floor under the rug; as the rug is picked up the
+  // shadow spreads and fades, which is what sells the lift.
+  tick() {
+    if (!this.rug || !this.shadow) return
+    const p = this.rug.object3D.position
+    this.shadow.object3D.position.set(p.x, RUG_LIFT / 2, p.z)
+
+    const lift = Math.min(Math.max(p.y / PICKUP_HEIGHT, 0), 1)
+    const mesh = this.shadow.getObject3D('mesh')
+    if (mesh) mesh.material.opacity = 0.45 - 0.25 * lift
+    this.shadow.object3D.scale.x = this.widthMetres() * (1.45 + 0.3 * lift)
+    this.shadow.object3D.scale.y = this.widthMetres() * this.aspect * (1.45 + 0.3 * lift)
+
+    const drag = this.rug.components['xrextras-hold-drag']
+    const dragging = !!(drag && drag.internalState.dragging)
+    if (dragging && !this.wasDragging && navigator.vibrate) navigator.vibrate(15)
+    this.wasDragging = dragging
+  },
+
   removeRug() {
     if (!this.rug) return
     const mesh = this.rugMesh.getObject3D('mesh')
     if (mesh) mesh.material.dispose()
     this.rug.parentNode.removeChild(this.rug)
+    this.shadow.parentNode.removeChild(this.shadow)
     this.rug = null
     this.rugMesh = null
+    this.shadow = null
     this.ui.controls.hidden = true
     this.ui.remove.hidden = true
     this.ui.hint.textContent = 'Tap the floor to place the rug'
